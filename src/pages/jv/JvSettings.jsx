@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Loader2, Copy, Check, PlugZap, Save, RefreshCw, AlertTriangle, ShieldCheck, Trash2, CheckCircle2, XCircle, ExternalLink, KeyRound,
 } from "lucide-react";
@@ -71,6 +71,7 @@ function RoleMapping({ tab, roleKeys, onSaved }) {
 }
 
 export default function JvSettings() {
+  const navigate = useNavigate();
   const [cfg, setCfg] = useState(null);
   const [creds, setCreds] = useState(null);
   const [roleKeys, setRoleKeys] = useState([]);
@@ -92,7 +93,7 @@ export default function JvSettings() {
 
   const hydrate = useCallback((c) => {
     setCfg(c);
-    setProvider(c.provider); setSheet(c.spreadsheetId); setScriptUrl(c.appsScriptUrl);
+    setProvider(c.configured ? c.provider : "public_link"); setSheet(c.spreadsheetId); setScriptUrl(c.appsScriptUrl);
     setAuto(c.autoSync); setAllowRefresh(c.allowEmployeeRefresh); setAllowExport(c.allowEmployeeExport);
     setTabs(c.tabs.map((t) => ({ gid: t.gid, key: t.key, title: t.title, enabled: t.enabled, headerRow: t.headerRow, hidden: false })));
   }, []);
@@ -126,6 +127,31 @@ export default function JvSettings() {
       setTestMsg({ ok: true, text: data.message });
     } catch (e) { setTestMsg({ ok: false, text: apiError(e, "Connection failed.") }); }
     finally { setTesting(false); }
+  };
+
+  // One-step flow for the "public link" option: test → enable every worksheet → save → sync → open listings.
+  const connectAndFetch = async (value) => {
+    const link = (value ?? sheet).trim();
+    if (!link) return toast.error("Paste the Google Sheet link first.");
+    setSheet(link); setTesting(true); setTestMsg(null);
+    const t = toast.loading("Reading your Google Sheet…");
+    try {
+      const { data } = await api.post("/jv/admin/test", { provider: "public_link", spreadsheetId: link });
+      const found = data.tabs.map((x) => ({ gid: x.gid, key: x.key, title: x.title, hidden: x.hidden, headerRow: 1, enabled: true }));
+      setTabs(found);
+      await api.put("/jv/admin/config", {
+        provider: "public_link", spreadsheetId: link,
+        tabs: found.map(({ gid, title, enabled, headerRow }) => ({ gid, title, enabled, headerRow })),
+        autoSync: auto, allowEmployeeRefresh: allowRefresh, allowEmployeeExport: allowExport,
+      });
+      const r = await api.post("/jv/sync");
+      clearCache("/jv/");
+      toast.success(`Fetched ${fmtNum(r.data.totals.rows)} records from “${data.title || "your sheet"}”`, { id: t });
+      navigate("/jv/listings");
+    } catch (e) {
+      toast.dismiss(t);
+      setTestMsg({ ok: false, text: apiError(e, "Could not read the sheet.") });
+    } finally { setTesting(false); }
   };
 
   const save = async (thenSync) => {
@@ -179,16 +205,28 @@ export default function JvSettings() {
         )}
 
         <Card title="1 · Connection" subtitle="Choose how the CRM reads your Google Sheet.">
-          <div className="grid sm:grid-cols-2 gap-3 mb-5">
-            {[["service_account", "Google service account", "Recommended. Share the sheet (Viewer) with a robot e-mail. No scripts, no passwords."],
-              ["apps_script", "Apps Script Web App", "Alternative. A small read-only script owned by your Google account."]].map(([v, t, d]) => (
+          <div className="grid md:grid-cols-3 gap-3 mb-5">
+            {[["public_link", "Paste a link", "Easiest. Share the sheet as “Anyone with the link → Viewer”, paste the link, and the data is fetched. No keys or scripts."],
+              ["service_account", "Google service account", "Most private. Share the sheet (Viewer) with a robot e-mail. Needs a Google Cloud key on the server."],
+              ["apps_script", "Apps Script Web App", "Private. A small read-only script owned by your Google account."]].map(([v, t, d]) => (
               <label key={v} className={`cursor-pointer p-3.5 rounded-xl border-2 transition ${provider === v ? "border-teal-500 bg-teal-50/60 dark:bg-teal-500/10" : "border-slate-200 dark:border-white/10 hover:border-slate-300"}`}>
                 <input type="radio" name="prov" className="sr-only" checked={provider === v} onChange={() => { setProvider(v); setTestMsg(null); }} />
-                <span className="block text-[13.5px] font-semibold text-slate-900 dark:text-white">{t}</span>
+                <span className="block text-[13.5px] font-semibold text-slate-900 dark:text-white">{t}{v === "public_link" && <span className="ml-2 text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-teal-600 text-white align-middle">quickest</span>}</span>
                 <span className="block text-[12px] text-slate-500 mt-0.5">{d}</span>
               </label>
             ))}
           </div>
+
+          {provider === "public_link" && (
+            <div className="mb-4 p-3.5 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-[12.5px] text-slate-600 dark:text-slate-300">
+              <p className="font-semibold text-slate-800 dark:text-slate-100 mb-1">How it works</p>
+              <ol className="list-decimal ml-4 space-y-0.5">
+                <li>In Google Sheets click <b>Share</b> → <b>General access</b> → <b>Anyone with the link</b> → role <b>Viewer</b>.</li>
+                <li>Copy the sheet's address and paste it below. The CRM reads every worksheet and opens JV Listings.</li>
+              </ol>
+              <p className="mt-2 flex items-start gap-1.5 text-amber-800 dark:text-amber-300"><AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />Anyone who has the link can open the sheet (it is read-only and unlisted). The sheet contains contact details, so don't share the link publicly — or use one of the private options.</p>
+            </div>
+          )}
 
           {provider === "service_account" && (
             creds?.configured ? (
@@ -211,7 +249,14 @@ export default function JvSettings() {
           <div className="space-y-4">
             <div>
               <label className={label}>Google Sheet URL or ID {provider === "apps_script" && <span className="font-normal text-slate-400">(optional)</span>}</label>
-              <input className={input} value={sheet} onChange={(e) => setSheet(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/…" />
+              <input className={input} value={sheet} placeholder="https://docs.google.com/spreadsheets/d/…"
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setSheet(v);
+                  // Pasting a full Google Sheets link on first setup connects and fetches immediately.
+                  const pasted = ["insertFromPaste", "insertFromDrop"].includes(e.nativeEvent?.inputType);
+                  if (pasted && provider === "public_link" && !cfg.configured && !testing && /\/spreadsheets\/d\/[\w-]{15,}/.test(v)) connectAndFetch(v);
+                }} />
             </div>
             {provider === "apps_script" && (
               <>
@@ -223,6 +268,11 @@ export default function JvSettings() {
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
+            {provider === "public_link" && (
+              <button onClick={() => connectAndFetch()} disabled={testing} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-700 to-teal-600 text-white text-[13px] font-semibold disabled:opacity-50">
+                {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />} Connect &amp; fetch data
+              </button>
+            )}
             <button onClick={testConnection} disabled={testing} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-300 dark:border-white/15 bg-white dark:bg-transparent text-[13px] font-semibold text-slate-700 dark:text-slate-200 hover:border-teal-500 disabled:opacity-50">
               {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlugZap className="w-4 h-4" />} Test connection
             </button>
