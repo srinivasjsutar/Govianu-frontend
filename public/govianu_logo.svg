@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 48" role="img" aria-label="Govianu CRM">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1D4ED8"/><stop offset="1" stop-color="#0D9488"/></linearGradient></defs>
+  <rect x="2" y="4" width="40" height="40" rx="11" fill="url(#g)"/>
+  <path d="M32 18.200C30.200 16.300 27.700 15.200 25 15.200 19.500 15.200 15 19.600 15 25s4.500 9.800 10 9.800c4.700 0 8.400-3 9-7.500h-9.200v-3.300h11.400c.1.700.2 1.400.2 2.200 0 7.400-5.400 12.600-12.400 12.600C17.700 38 12 32.200 12 25S17.700 12 25 12c3.700 0 7 1.400 9.400 3.800L32 18.200z" fill="#fff"/>
+  <text x="54" y="25" font-family="Poppins,Segoe UI,Arial,sans-serif" font-size="19" font-weight="700" fill="#0F172A">Govianu</text>
+  <text x="54" y="40" font-family="Poppins,Segoe UI,Arial,sans-serif" font-size="10.500" font-weight="600" letter-spacing="2" fill="#0D9488">WEALTH CRM</text>
+</svg>
